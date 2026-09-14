@@ -96,15 +96,18 @@ async function boards() {
     const stale = j.sample_age_s < 0;
     g.innerHTML = j.boards.map(b => {
       const tok = b.engine_ms + b.exchange_ms + b.cpu_ms;
+      // The engine reads this board's whole shard once per token, so shard / fabric time is the bandwidth it drew.
+      const bw = b.engine_ms > 0 ? b.shard_mb / b.engine_ms : 0;   // MB/ms = GB/s
       const on = j.busy;
       return `<div class="board">
         <h3><span>${b.host || 'board ' + (b.rank + 1)}</span><span class="st ${on ? 'on' : ''}">${on ? '● decoding ' + b.tps.toFixed(1) + ' t/s' : '○ idle'}</span></h3>
         <div class="legend">last token ${stale ? '—' : tok.toFixed(0) + ' ms'}: <i class="e"></i>${b.engine_ms.toFixed(0)} ms (fabric) + <i class="c"></i>${b.cpu_ms.toFixed(0)} ms (cpu) + <i class="x"></i>${b.exchange_ms.toFixed(0)} ms (interfaces)</div>
         ${bar([['e', b.engine_ms], ['c', b.cpu_ms], ['x', b.exchange_ms]], tok)}
-        <div class="legend">CPU ${b.cpu_pct.toFixed(0)}%</div>${bar([['u', b.cpu_pct]], 100)}
+        <div class="legend">fabric memory bandwidth ${bw > 0 ? bw.toFixed(1) + ' of 19.2 GB/s (' + (100 * bw / 19.2).toFixed(0) + '%)' : '—'}</div>${bar([['e', bw]], 19.2)}
         <div class="legend">RAM ${(b.mem_used_mb / 1024).toFixed(2)} / ${(b.mem_total_mb / 1024).toFixed(1)} GB</div>${bar([['u', b.mem_used_mb]], b.mem_total_mb)}
         <div class="kv">
           <span>weights on this board</span><b>${b.shard_mb.toFixed(0)} MB (heads ${b.heads}, vocab rows ${b.vocab_rows})</b>
+          <span>fabric used</span><b>27% LUT · 18% DSP · 33% BRAM · 250 MHz</b>
           <span>chip</span><b>${b.temp_c > 0 ? b.temp_c.toFixed(1) + ' °C' : '—'}${b.power_w > 0 ? ' · ' + b.power_w.toFixed(1) + ' W' : ''}</b>
         </div>
       </div>`;
