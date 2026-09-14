@@ -42,6 +42,7 @@
   button { padding:0 18px; border:0; border-radius:10px; background:var(--accent); color:#fff; font:inherit; cursor:pointer; }
   button:disabled { opacity:.5; cursor:default }
   .ok { color:#2a8f3c } .bad { color:#c23a2b }
+  #examples { margin:0 0 10px; } #examples[hidden] { display:none } #examples button { white-space:normal; text-align:left; }
   .grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; margin-bottom:10px; }
   #system { margin:14px 0 12px; }
   #system .legend { white-space:normal; }
@@ -87,6 +88,7 @@
     <input id="maxtok" type="range" min="64" max="1024" step="64" value="512" title="Longest reply, in tokens. The boards decode about 20 tokens a second.">
     <button id="clear" type="button" class="ghost">Clear chat</button>
   </div>
+  <div id="examples" class="row"><label>Try:</label></div>
   <div id="chat"></div>
 </main>
 
@@ -146,6 +148,7 @@ async function boards() {
           <span>Power: <b>${power > 0 ? power.toFixed(1) + ' W' : '—'}</b></span>
           <span>Hottest: <b>${temp > 0 ? temp.toFixed(1) + ' °C' : '—'}</b></span>
           <span>RAM: <b>${(memUsed / 1024).toFixed(1)} / ${(memTotal / 1024).toFixed(1)} GB</b></span>
+          <span>Served: <b>${(j.tokens_total || 0).toLocaleString('en-US')} tokens</b> since start</span>
           <span>Programmable Logic: <b>${(nb * PL.lut).toLocaleString('en-US')} LUT · ${nb * PL.dsp} DSP · ${nb * PL.bram} BRAM</b> in use across ${nb} boards</span>
         </div>`;
     const stale = j.sample_age_s < 0;
@@ -174,15 +177,25 @@ boards(); setInterval(() => { if ($('resources').open || ++tick % 5 === 0) board
 $('resources').addEventListener('toggle', () => { if ($('resources').open) boards(); });
 
 // The reply limit: the range next to Clear chat, remembered in this browser.
-// The server clamps it to what fits its 2048-token context after the prompt.
+// The server clamps it to what fits its context after the prompt.
+const CTX = 2048;   // tp_llama's --ctx; serve-tp.sh runs the default
 const maxtok = $('maxtok');
 try { const v = parseInt(localStorage.getItem('kv260.maxtok')); if (v >= 64 && v <= 1024) maxtok.value = v; } catch (e) {}
 const showMax = () => { $('maxtokv').textContent = maxtok.value + ' tokens'; };
 maxtok.addEventListener('input', () => { showMax(); try { localStorage.setItem('kv260.maxtok', maxtok.value); } catch (e) {} });
 showMax();
 
+// Example prompts: one click sends one. Shown while the chat is empty.
+const EXAMPLES = ['Explain what an FPGA is to a high-school student.',
+                  'Write a short poem about four small boards thinking as one.',
+                  'Give me a five-step plan to learn Rust, one sentence per step.'];
+for (const t of EXAMPLES) {
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'ghost'; b.textContent = t;
+  b.addEventListener('click', () => { $('q').value = t; $('f').requestSubmit(); });
+  $('examples').appendChild(b);
+}
 // One conversation. Clear starts over (so does a page refresh).
-$('clear').addEventListener('click', () => { history.length = 0; $('chat').innerHTML = ''; });
+$('clear').addEventListener('click', () => { history.length = 0; $('chat').innerHTML = ''; $('examples').hidden = false; });
 
 // The model answers in Markdown (**bold**, lists, headings, code); render it, sanitized.
 // If the libraries did not load, fall back to plain text with line breaks kept.
@@ -208,6 +221,7 @@ $('f').addEventListener('submit', async (e) => {
   if (!text) return;
   $('q').value = '';
   $('send').disabled = true;
+  $('examples').hidden = true;
   add('user', text);
   history.push({ role: 'user', content: text });
   const bot = add('bot', '');
@@ -255,7 +269,8 @@ $('f').addEventListener('submit', async (e) => {
     if (raf) cancelAnimationFrame(raf); paint();
     history.push({ role: 'assistant', content: out });
     const ttft = tFirst ? ((tFirst - t0) / 1000).toFixed(2) : '?';
-    const sv = timings ? `${timings.predicted_per_second.toFixed(1)} t/s on the boards, prompt ${timings.prompt_n} tokens in ${(timings.prompt_ms / 1000).toFixed(2)} s` : '';
+    // The prompt is the whole conversation sent (the last 8 turns), so prompt + reply is what this turn used of the context.
+    const sv = timings ? `${timings.predicted_per_second.toFixed(1)} t/s on the boards, prompt ${timings.prompt_n} tokens in ${(timings.prompt_ms / 1000).toFixed(2)} s · context ${timings.prompt_n + timings.predicted_n} / ${CTX}` : '';
     meta.textContent = `${n} tokens · first token ${ttft} s · ${sv}` + (finish === 'length' ? ` · cut at the ${maxtok.value}-token limit (raise it above)` : '');
   } catch (err) {
     meta.textContent = 'error: ' + err.message;
