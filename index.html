@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Four KV260s, one LLM</title>
+<style>
+  :root { --bg:#f7f7f5; --fg:#1b1b1b; --muted:#6b6b6b; --line:#dcdcd7; --card:#ffffff; --accent:#0b5fff; --user:#eef3ff; --bot:#f3f3ef; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111214; --fg:#e8e8e6; --muted:#9a9a97; --line:#2a2b2e; --card:#191a1d; --accent:#6ea0ff; --user:#1b2436; --bot:#1f2023; } }
+  * { box-sizing:border-box }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  main { max-width:760px; margin:0 auto; padding:24px 16px 120px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .sub { color:var(--muted); margin:0 0 18px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin-bottom:14px; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  label { color:var(--muted); font-size:13px; }
+  input[type=text] { flex:1; min-width:240px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--fg); font-family:var(--mono); font-size:13px; }
+  input[type=range] { width:120px }
+  .stat { font-family:var(--mono); font-size:13px; color:var(--muted); }
+  .stat b { color:var(--fg); font-weight:600 }
+  #chat { display:flex; flex-direction:column; gap:10px; min-height:200px; }
+  .msg { padding:10px 14px; border-radius:10px; white-space:pre-wrap; word-wrap:break-word; }
+  .user { background:var(--user); align-self:flex-end; max-width:85%; }
+  .bot { background:var(--bot); align-self:flex-start; max-width:95%; }
+  .bot .meta { display:block; margin-top:8px; font-family:var(--mono); font-size:12px; color:var(--muted); }
+  form { position:fixed; left:0; right:0; bottom:0; background:var(--bg); border-top:1px solid var(--line); padding:12px 16px; }
+  form .inner { max-width:760px; margin:0 auto; display:flex; gap:8px; }
+  textarea { flex:1; resize:none; height:46px; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--card); color:var(--fg); font:inherit; }
+  button { padding:0 18px; border:0; border-radius:10px; background:var(--accent); color:#fff; font:inherit; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:default }
+  .ok { color:#2a8f3c } .bad { color:#c23a2b }
+  details summary { cursor:pointer; color:var(--muted); font-size:13px }
+  code { font-family:var(--mono); font-size:13px }
+</style>
+</head>
+<body>
+<main>
+  <h1>Four KV260s, one LLM</h1>
+  <p class="sub">Llama-3.2-1B-Instruct (Q4_0, 663 MiB) decoded by four Kria KV260 boards working on <em>one</em> stream: each board streams a quarter of the weights through its own FPGA engine, and they exchange partial sums over a gigabit switch. Every token you see was computed by all four.</p>
+
+  <div class="card">
+    <div class="row">
+      <label for="ep">API</label>
+      <input type="text" id="ep" placeholder="https://…trycloudflare.com">
+      <span id="health" class="stat">checking…</span>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <label>temperature <span id="tval">0.0</span></label>
+      <input type="range" id="temp" min="0" max="1.2" step="0.1" value="0">
+      <label>max tokens</label>
+      <input type="text" id="maxtok" value="160" style="flex:0 0 70px;min-width:0">
+      <span class="stat" id="last"></span>
+    </div>
+  </div>
+
+  <div id="chat"></div>
+
+  <details class="card" style="margin-top:14px">
+    <summary>What is behind this page</summary>
+    <p>The API is OpenAI-compatible (<code>/v1/chat/completions</code>, streaming). It runs on board 1 of four AMD Kria KV260s; the boards run a tensor-parallel runtime on a custom int4 weight-streaming engine in each FPGA's fabric (Vitis HLS, 250 MHz, four AXI ports at ~11.6 GB/s). One board alone does ~10 tokens/s; four together ~20. First-token latency is the prompt being processed one token per engine pass, so long prompts wait longer. One prompt is served at a time, in arrival order, so the one stream gets the full rate; if someone else is chatting, yours queues (at most 8 wait).</p>
+    <p>Use it from any OpenAI client with <code>base_url = &lt;API&gt;/v1</code> and any API key.</p>
+  </details>
+</main>
+
+<form id="f">
+  <div class="inner">
+    <textarea id="q" placeholder="Ask something… (Enter to send, Shift+Enter for a new line)"></textarea>
+    <button id="send" type="submit">Send</button>
+  </div>
+</form>
+
+<script src="config.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const history = [];
+const ep = $('ep');
+ep.value = localStorage.getItem('kv260-api') || (window.KV260_API || '');
+ep.addEventListener('change', () => { localStorage.setItem('kv260-api', ep.value.trim()); health(); });
+$('temp').addEventListener('input', () => $('tval').textContent = (+$('temp').value).toFixed(1));
+
+async function health() {
+  const base = ep.value.trim().replace(/\/+$/, '');
+  const h = $('health');
+  if (!base) { h.textContent = 'no API URL'; h.className = 'stat bad'; return; }
+  try {
+    const r = await fetch(base + '/health', { cache: 'no-store' });
+    const j = await r.json();
+    h.innerHTML = `<span class="ok">● online</span>, ${j.ranks} boards` + (j.busy ? `, busy (${j.queued} queued)` : ', idle');
+  } catch (e) {
+    h.innerHTML = '<span class="bad">● unreachable</span>';
+  }
+}
+health();
+
+function add(role, text) {
+  const d = document.createElement('div');
+  d.className = 'msg ' + (role === 'user' ? 'user' : 'bot');
+  d.textContent = text;
+  $('chat').appendChild(d);
+  d.scrollIntoView({ block: 'end' });
+  return d;
+}
+
+$('f').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const text = $('q').value.trim();
+  if (!text) return;
+  const base = ep.value.trim().replace(/\/+$/, '');
+  $('q').value = '';
+  $('send').disabled = true;
+  add('user', text);
+  history.push({ role: 'user', content: text });
+  const bot = add('bot', '');
+  const meta = document.createElement('span'); meta.className = 'meta'; meta.textContent = 'waiting for the boards…';
+  bot.appendChild(meta);
+  let out = '', t0 = performance.now(), tFirst = null, n = 0, timings = null, poll = null;
+  try {
+    // While we wait for the first token, show the queue: one stream at a time, served in order.
+    poll = setInterval(async () => {
+      if (tFirst !== null) { clearInterval(poll); return; }
+      try { const j = await (await fetch(base + '/health', { cache: 'no-store' })).json();
+            meta.textContent = j.queued > 0 ? `queued — ${j.queued} waiting, one stream at a time…` : (j.busy ? 'the boards are working on your prompt…' : 'waiting for the boards…'); } catch (e) {}
+    }, 1000);
+    const r = await fetch(base + '/v1/chat/completions', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: history.slice(-8), max_tokens: parseInt($('maxtok').value) || 160,
+                             temperature: +$('temp').value, stream: true })
+    });
+    if (r.status === 429) { clearInterval(poll); throw new Error('the queue is full (one stream at a time, 8 may wait) — try again in a minute'); }
+    if (!r.ok) { clearInterval(poll); throw new Error('HTTP ' + r.status); }
+    const reader = r.body.getReader(), dec = new TextDecoder();
+    let buf = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const line = buf.slice(0, i).trim(); buf = buf.slice(i + 2);
+        if (!line.startsWith('data: ')) continue;
+        const payload = line.slice(6);
+        if (payload === '[DONE]') continue;
+        const j = JSON.parse(payload);
+        const delta = j.choices?.[0]?.delta?.content;
+        if (delta) {
+          if (tFirst === null) tFirst = performance.now();
+          out += delta; n++;
+          bot.firstChild.nodeValue = out;
+          meta.textContent = `${n} tokens · ${(n / ((performance.now() - tFirst) / 1000 || 1e-9)).toFixed(1)} t/s`;
+        }
+        if (j.timings) timings = j.timings;
+      }
+    }
+    history.push({ role: 'assistant', content: out });
+    const ttft = tFirst ? ((tFirst - t0) / 1000).toFixed(2) : '?';
+    const sv = timings ? `${timings.predicted_per_second.toFixed(1)} t/s on the boards, prompt ${timings.prompt_n} tokens in ${(timings.prompt_ms / 1000).toFixed(2)} s` : '';
+    meta.textContent = `${n} tokens · first token ${ttft} s · ${sv}`;
+    $('last').textContent = timings ? `last: ${timings.predicted_per_second.toFixed(1)} t/s` : '';
+  } catch (err) {
+    meta.textContent = 'error: ' + err.message + ' — is the API URL right and the tunnel up?';
+    meta.className = 'meta bad';
+  } finally {
+    clearInterval(poll);
+    $('send').disabled = false;
+    bot.scrollIntoView({ block: 'end' });
+  }
+});
+$('q').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('f').requestSubmit(); } });
+</script>
+</body>
+</html>
