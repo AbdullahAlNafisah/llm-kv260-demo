@@ -36,6 +36,9 @@
   .board h3 { margin:0 0 2px; font-size:14px; display:flex; justify-content:space-between; }
   .board .st { color:var(--muted); font-family:var(--mono); font-size:12px; }
   .board .st.on { color:#2a8f3c }
+  .barrow { display:flex; align-items:center; gap:8px; margin:4px 0 2px; }
+  .barrow .bar { flex:1; margin:0; }
+  .pct { font-family:var(--mono); font-size:12px; color:var(--muted); width:36px; text-align:right; }
   .bar { height:8px; border-radius:4px; background:var(--line); overflow:hidden; display:flex; margin:4px 0 2px; }
   .bar > i { display:block; height:100%; }
   .e { background:#0b5fff } .x { background:#e0a100 } .c { background:#8a8a8a } .u { background:#2a8f3c }
@@ -86,8 +89,10 @@ health(); setInterval(health, 10000);
 
 // One board per card: what it is doing right now, its share of the last
 // token, and its resources. Refreshed every second from /stats.
-function bar(parts, total) {   // parts: [[class, value], ...]
-  return '<div class="bar">' + parts.map(([c, v]) => `<i class="${c}" style="width:${total > 0 ? (100 * v / total).toFixed(1) : 0}%"></i>`).join('') + '</div>';
+function bar(parts, total, pct) {   // parts: [[class, value], ...]; pct: show the fill percentage right of the bar
+  const fill = parts.map(([c, v]) => `<i class="${c}" style="width:${total > 0 ? (100 * v / total).toFixed(1) : 0}%"></i>`).join('');
+  const used = parts.reduce((a, [, v]) => a + v, 0);
+  return `<div class="barrow"><div class="bar">${fill}</div>${pct ? `<span class="pct">${total > 0 ? (100 * used / total).toFixed(0) : 0}%</span>` : ''}</div>`;
 }
 async function boards() {
   const g = $('grid');
@@ -103,8 +108,8 @@ async function boards() {
         <h3><span>${b.host || 'board ' + (b.rank + 1)}</span><span class="st ${on ? 'on' : ''}">${on ? '● decoding ' + b.tps.toFixed(1) + ' t/s' : '○ idle'}</span></h3>
         <div class="legend">last token ${stale ? '—' : tok.toFixed(0) + ' ms'}: <i class="e"></i>${b.engine_ms.toFixed(0)} ms (fabric) + <i class="c"></i>${b.cpu_ms.toFixed(0)} ms (cpu) + <i class="x"></i>${b.exchange_ms.toFixed(0)} ms (interfaces)</div>
         ${bar([['e', b.engine_ms], ['c', b.cpu_ms], ['x', b.exchange_ms]], tok)}
-        <div class="legend">Memory BW ${bw > 0 ? bw.toFixed(1) + ' of 19.2 GB/s (' + (100 * bw / 19.2).toFixed(0) + '%)' : '—'}</div>${bar([['e', bw]], 19.2)}
-        <div class="legend">RAM ${(b.mem_used_mb / 1024).toFixed(2)} / ${(b.mem_total_mb / 1024).toFixed(1)} GB</div>${bar([['u', b.mem_used_mb]], b.mem_total_mb)}
+        <div class="legend">Memory BW ${bw > 0 ? bw.toFixed(1) + ' / 19.2 GB/s' : '—'}</div>${bar([['e', bw]], 19.2, true)}
+        <div class="legend">RAM ${(b.mem_used_mb / 1024).toFixed(2)} / ${(b.mem_total_mb / 1024).toFixed(1)} GB</div>${bar([['u', b.mem_used_mb]], b.mem_total_mb, true)}
         <div class="kv">
           <span>weights on this board</span><b>${b.shard_mb.toFixed(0)} MB (heads ${b.heads}, vocab rows ${b.vocab_rows})</b>
           <span>fabric used</span><b>27% LUT · 18% DSP · 33% BRAM · 250 MHz</b>
