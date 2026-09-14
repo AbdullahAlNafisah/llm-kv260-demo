@@ -82,7 +82,11 @@
     <div id="grid" class="grid"></div>
   </details>
 
-  <div class="row" style="justify-content:flex-end;margin:6px 0 10px"><button id="clear" type="button" class="ghost">Clear chat</button></div>
+  <div class="row" style="justify-content:flex-end;margin:6px 0 10px">
+    <label for="maxtok">Reply limit <b id="maxtokv" class="stat"></b></label>
+    <input id="maxtok" type="range" min="64" max="1024" step="64" value="512" title="Longest reply, in tokens. The boards decode about 20 tokens a second.">
+    <button id="clear" type="button" class="ghost">Clear chat</button>
+  </div>
   <div id="chat"></div>
 </main>
 
@@ -168,6 +172,14 @@ let tick = 0;
 boards(); setInterval(() => { if ($('resources').open || ++tick % 5 === 0) boards(); }, 1000);
 $('resources').addEventListener('toggle', () => { if ($('resources').open) boards(); });
 
+// The reply limit: the range next to Clear chat, remembered in this browser.
+// The server clamps it to what fits its 2048-token context after the prompt.
+const maxtok = $('maxtok');
+try { const v = parseInt(localStorage.getItem('kv260.maxtok')); if (v >= 64 && v <= 1024) maxtok.value = v; } catch (e) {}
+const showMax = () => { $('maxtokv').textContent = maxtok.value + ' tokens'; };
+maxtok.addEventListener('input', () => { showMax(); try { localStorage.setItem('kv260.maxtok', maxtok.value); } catch (e) {} });
+showMax();
+
 // One conversation. Clear starts over (so does a page refresh).
 $('clear').addEventListener('click', () => { history.length = 0; $('chat').innerHTML = ''; });
 
@@ -200,7 +212,7 @@ $('f').addEventListener('submit', async (e) => {
   const bot = add('bot', '');
   const meta = document.createElement('span'); meta.className = 'meta'; meta.textContent = 'waiting for the boards…';
   bot.appendChild(meta);
-  let out = '', t0 = performance.now(), tFirst = null, n = 0, timings = null, poll = null, raf = 0;
+  let out = '', t0 = performance.now(), tFirst = null, n = 0, timings = null, poll = null, raf = 0, finish = null;
   const paint = () => { raf = 0; render(bot.firstChild, out); };
   try {
     // While we wait for the first token, show the queue: one stream at a time, served in order.
@@ -211,7 +223,7 @@ $('f').addEventListener('submit', async (e) => {
     }, 1000);
     const r = await fetch(base + '/v1/chat/completions', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: history.slice(-8), max_tokens: 256, temperature: 0, stream: true })
+      body: JSON.stringify({ messages: history.slice(-8), max_tokens: parseInt(maxtok.value), temperature: 0, stream: true })
     });
     if (r.status === 429) { clearInterval(poll); throw new Error('the queue is full (one stream at a time, 8 may wait) — try again in a minute'); }
     if (!r.ok) { clearInterval(poll); throw new Error('HTTP ' + r.status); }
@@ -236,13 +248,14 @@ $('f').addEventListener('submit', async (e) => {
           meta.textContent = `${n} tokens · ${(n / ((performance.now() - tFirst) / 1000 || 1e-9)).toFixed(1)} t/s`;
         }
         if (j.timings) timings = j.timings;
+        if (j.choices?.[0]?.finish_reason) finish = j.choices[0].finish_reason;
       }
     }
     if (raf) cancelAnimationFrame(raf); paint();
     history.push({ role: 'assistant', content: out });
     const ttft = tFirst ? ((tFirst - t0) / 1000).toFixed(2) : '?';
     const sv = timings ? `${timings.predicted_per_second.toFixed(1)} t/s on the boards, prompt ${timings.prompt_n} tokens in ${(timings.prompt_ms / 1000).toFixed(2)} s` : '';
-    meta.textContent = `${n} tokens · first token ${ttft} s · ${sv}`;
+    meta.textContent = `${n} tokens · first token ${ttft} s · ${sv}` + (finish === 'length' ? ` · cut at the ${maxtok.value}-token limit (raise it above)` : '');
   } catch (err) {
     meta.textContent = 'error: ' + err.message;
     meta.className = 'meta bad';
