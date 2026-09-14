@@ -99,8 +99,8 @@ async function boards() {
       const on = j.busy;
       return `<div class="board">
         <h3><span>${b.host || 'board ' + (b.rank + 1)}</span><span class="st ${on ? 'on' : ''}">${on ? '● decoding ' + b.tps.toFixed(1) + ' t/s' : '○ idle'}</span></h3>
-        <div class="legend">last token ${stale ? '—' : tok.toFixed(0) + ' ms'}: <i class="e"></i>engine ${b.engine_ms.toFixed(0)} <i class="x"></i>exchange ${b.exchange_ms.toFixed(0)} <i class="c"></i>cpu ${b.cpu_ms.toFixed(0)} ms</div>
-        ${bar([['e', b.engine_ms], ['x', b.exchange_ms], ['c', b.cpu_ms]], tok)}
+        <div class="legend">last token ${stale ? '—' : tok.toFixed(0) + ' ms'}: <i class="e"></i>${b.engine_ms.toFixed(0)} ms (fabric) + <i class="c"></i>${b.cpu_ms.toFixed(0)} ms (cpu) + <i class="x"></i>${b.exchange_ms.toFixed(0)} ms (interfaces)</div>
+        ${bar([['e', b.engine_ms], ['c', b.cpu_ms], ['x', b.exchange_ms]], tok)}
         <div class="legend">CPU ${b.cpu_pct.toFixed(0)}%</div>${bar([['u', b.cpu_pct]], 100)}
         <div class="legend">RAM ${(b.mem_used_mb / 1024).toFixed(2)} / ${(b.mem_total_mb / 1024).toFixed(1)} GB</div>${bar([['u', b.mem_used_mb]], b.mem_total_mb)}
         <div class="kv">
