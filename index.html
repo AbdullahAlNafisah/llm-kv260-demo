@@ -30,6 +30,20 @@
   button { padding:0 18px; border:0; border-radius:10px; background:var(--accent); color:#fff; font:inherit; cursor:pointer; }
   button:disabled { opacity:.5; cursor:default }
   .ok { color:#2a8f3c } .bad { color:#c23a2b }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px; }
+  @media (max-width:520px) { .grid { grid-template-columns:1fr } }
+  .board { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 12px; font-size:13px; }
+  .board h3 { margin:0 0 2px; font-size:14px; display:flex; justify-content:space-between; }
+  .board .st { color:var(--muted); font-family:var(--mono); font-size:12px; }
+  .board .st.on { color:#2a8f3c }
+  .bar { height:8px; border-radius:4px; background:var(--line); overflow:hidden; display:flex; margin:4px 0 2px; }
+  .bar > i { display:block; height:100%; }
+  .e { background:#0b5fff } .x { background:#e0a100 } .c { background:#8a8a8a } .u { background:#2a8f3c }
+  .kv { display:grid; grid-template-columns:auto 1fr; gap:2px 8px; margin-top:6px; color:var(--muted); }
+  .kv b { color:var(--fg); font-weight:500; font-family:var(--mono); font-size:12px; }
+  .legend { font-size:11px; color:var(--muted); }
+  .legend i { display:inline-block; width:8px; height:8px; border-radius:2px; margin:0 3px 0 6px; vertical-align:middle }
+  button.ghost { background:transparent; color:var(--muted); border:1px solid var(--line); padding:4px 10px; font-size:13px; }
   details summary { cursor:pointer; color:var(--muted); font-size:13px }
   code { font-family:var(--mono); font-size:13px }
 </style>
@@ -39,6 +53,9 @@
   <h1>Four KV260s, one LLM</h1>
   <p class="sub">Model: <b>Llama-3.2-1B-Instruct</b> · quantization: <b>Q4_0</b> (4-bit, 663 MiB) · <span id="health">checking…</span></p>
 
+  <div id="grid" class="grid"></div>
+
+  <div class="row" style="justify-content:flex-end;margin:6px 0 10px"><button id="clear" type="button" class="ghost">Clear chat</button></div>
   <div id="chat"></div>
 </main>
 
@@ -66,6 +83,40 @@ async function health() {
   }
 }
 health(); setInterval(health, 10000);
+
+// One board per card: what it is doing right now, its share of the last
+// token, and its resources. Refreshed every second from /stats.
+function bar(parts, total) {   // parts: [[class, value], ...]
+  return '<div class="bar">' + parts.map(([c, v]) => `<i class="${c}" style="width:${total > 0 ? (100 * v / total).toFixed(1) : 0}%"></i>`).join('') + '</div>';
+}
+async function boards() {
+  const g = $('grid');
+  try {
+    const j = await (await fetch(base + '/stats', { cache: 'no-store' })).json();
+    const stale = j.sample_age_s < 0;
+    g.innerHTML = j.boards.map(b => {
+      const tok = b.engine_ms + b.exchange_ms + b.cpu_ms;
+      const on = j.busy;
+      return `<div class="board">
+        <h3><span>${b.host || 'board ' + (b.rank + 1)}</span><span class="st ${on ? 'on' : ''}">${on ? '● decoding ' + b.tps.toFixed(1) + ' t/s' : '○ idle'}</span></h3>
+        <div class="legend">last token ${stale ? '—' : tok.toFixed(0) + ' ms'}: <i class="e"></i>engine ${b.engine_ms.toFixed(0)} <i class="x"></i>exchange ${b.exchange_ms.toFixed(0)} <i class="c"></i>cpu ${b.cpu_ms.toFixed(0)} ms</div>
+        ${bar([['e', b.engine_ms], ['x', b.exchange_ms], ['c', b.cpu_ms]], tok)}
+        <div class="legend">CPU ${b.cpu_pct.toFixed(0)}%</div>${bar([['u', b.cpu_pct]], 100)}
+        <div class="legend">RAM ${(b.mem_used_mb / 1024).toFixed(2)} / ${(b.mem_total_mb / 1024).toFixed(1)} GB</div>${bar([['u', b.mem_used_mb]], b.mem_total_mb)}
+        <div class="kv">
+          <span>weights on this board</span><b>${b.shard_mb.toFixed(0)} MB (heads ${b.heads}, vocab rows ${b.vocab_rows})</b>
+          <span>chip</span><b>${b.temp_c > 0 ? b.temp_c.toFixed(1) + ' °C' : '—'}${b.power_w > 0 ? ' · ' + b.power_w.toFixed(1) + ' W' : ''}</b>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    if (!g.innerHTML) g.innerHTML = '<div class="board">boards unreachable</div>';
+  }
+}
+boards(); setInterval(boards, 1000);
+
+// One conversation. Clear starts over (so does a page refresh).
+$('clear').addEventListener('click', () => { history.length = 0; $('chat').innerHTML = ''; });
 
 function add(role, text) {
   const d = document.createElement('div');
