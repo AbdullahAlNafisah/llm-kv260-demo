@@ -42,7 +42,7 @@
   button { padding:0 18px; border:0; border-radius:10px; background:var(--accent); color:#fff; font:inherit; cursor:pointer; }
   button:disabled { opacity:.5; cursor:default }
   .ok { color:#2a8f3c } .bad { color:#c23a2b }
-  #examples { margin:0 0 10px; } #examples[hidden] { display:none } #examples button { white-space:normal; text-align:left; }
+  #examples { max-width:1180px; margin:0 auto 10px; } #examples[hidden] { display:none } #examples button { white-space:normal; text-align:left; }
   .grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; margin-bottom:10px; }
   #system { margin:14px 0 12px; }
   #system .legend { white-space:normal; }
@@ -88,11 +88,11 @@
     <input id="maxtok" type="range" min="64" max="1024" step="64" value="512" title="Longest reply, in tokens. The boards decode about 20 tokens a second.">
     <button id="clear" type="button" class="ghost">Clear chat</button>
   </div>
-  <div id="examples" class="row"><label>Try:</label></div>
   <div id="chat"></div>
 </main>
 
 <form id="f">
+  <div id="examples" class="row"><label>Try:</label></div>
   <div class="inner">
     <textarea id="q" placeholder="Ask something… (Enter to send, Shift+Enter for a new line)"></textarea>
     <button id="send" type="submit">Send</button>
@@ -189,13 +189,17 @@ showMax();
 const EXAMPLES = ['Explain what an FPGA is to a high-school student.',
                   'Write a short poem about four small boards thinking as one.',
                   'Give me a five-step plan to learn Rust, one sentence per step.'];
+// The chat's bottom padding follows the bar's height (the example row comes and goes).
+const fitBar = () => { document.querySelector('main').style.paddingBottom = ($('f').offsetHeight + 24) + 'px'; };
+window.addEventListener('resize', fitBar);
 for (const t of EXAMPLES) {
   const b = document.createElement('button'); b.type = 'button'; b.className = 'ghost'; b.textContent = t;
   b.addEventListener('click', () => { $('q').value = t; $('f').requestSubmit(); });
   $('examples').appendChild(b);
 }
+fitBar();
 // One conversation. Clear starts over (so does a page refresh).
-$('clear').addEventListener('click', () => { history.length = 0; $('chat').innerHTML = ''; $('examples').hidden = false; });
+$('clear').addEventListener('click', () => { history.length = 0; $('chat').innerHTML = ''; $('examples').hidden = false; fitBar(); });
 
 // The model answers in Markdown (**bold**, lists, headings, code); render it, sanitized.
 // If the libraries did not load, fall back to plain text with line breaks kept.
@@ -221,7 +225,7 @@ $('f').addEventListener('submit', async (e) => {
   if (!text) return;
   $('q').value = '';
   $('send').disabled = true;
-  $('examples').hidden = true;
+  $('examples').hidden = true; fitBar();
   add('user', text);
   history.push({ role: 'user', content: text });
   const bot = add('bot', '');
