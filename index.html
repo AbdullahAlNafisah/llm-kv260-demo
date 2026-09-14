@@ -126,6 +126,7 @@ async function boards() {
     // The last chat: the mean per-token split across the boards, averaged over every token it generated.
     const c = j.last_chat || {};
     const tok = (c.engine_ms || 0) + (c.cpu_ms || 0) + (c.exchange_ms || 0);
+    const pct = (v) => tok > 0 ? (100 * v / tok).toFixed(0) + '%' : '—';
     const nb = j.boards.length;
     const weights = j.boards.reduce((a, b) => a + b.shard_mb, 0);
     const power = j.boards.reduce((a, b) => a + (b.power_w > 0 ? b.power_w : 0), 0);
@@ -136,7 +137,7 @@ async function boards() {
     $('system').innerHTML = `
         <h3><span>System · ${nb} boards · ${j.model || ''}</span><span class="st ${on ? 'on' : ''}">${on ? '● decoding' : '○ idle'}</span></h3>
         ${c.n_gen > 0 ? `
-        <div class="legend">Last chat: <b>${c.n_gen}</b> tokens at <b>${c.tps.toFixed(1)} t/s</b> · first token after ${(c.prompt_ms / 1000).toFixed(2)} s (${c.n_prompt}-token prompt) · average consumed time ${tok.toFixed(0)} ms: <i class="e"></i>${c.engine_ms.toFixed(0)} ms (fabric) + <i class="c"></i>${c.cpu_ms.toFixed(0)} ms (cpu) + <i class="x"></i>${c.exchange_ms.toFixed(0)} ms (interfaces)</div>
+        <div class="legend">Last chat: <b>${c.n_gen}</b> tokens at <b>${c.tps.toFixed(1)} t/s</b> · first token after ${(c.prompt_ms / 1000).toFixed(2)} s (${c.n_prompt}-token prompt) · average consumed time per token is ${tok.toFixed(0)} ms: <i class="e"></i>${c.engine_ms.toFixed(0)} ms (${pct(c.engine_ms)} in fabric) + <i class="c"></i>${c.cpu_ms.toFixed(0)} ms (${pct(c.cpu_ms)} in cpu) + <i class="x"></i>${c.exchange_ms.toFixed(0)} ms (${pct(c.exchange_ms)} in interfaces)</div>
         ${bar([['e', c.engine_ms], ['c', c.cpu_ms], ['x', c.exchange_ms]], tok)}`
         : `<div class="legend">Last chat: none yet — send a prompt and the average per-token split appears here.</div>${bar([], 1)}`}
         <div class="sys">
