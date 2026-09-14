@@ -20,8 +20,20 @@
   .stat { font-family:var(--mono); font-size:13px; color:var(--muted); }
   .stat b { color:var(--fg); font-weight:600 }
   #chat { display:flex; flex-direction:column; gap:10px; min-height:200px; }
-  .msg { padding:10px 14px; border-radius:10px; white-space:pre-wrap; word-wrap:break-word; }
-  .user { background:var(--user); align-self:flex-end; max-width:85%; }
+  .msg { padding:10px 14px; border-radius:10px; word-wrap:break-word; overflow-wrap:anywhere; }
+  .user { background:var(--user); align-self:flex-end; max-width:85%; white-space:pre-wrap; }
+  /* the model's text is Markdown, rendered as it streams */
+  .md > :first-child { margin-top:0 } .md > :last-child { margin-bottom:0 }
+  .md p, .md ul, .md ol, .md pre, .md blockquote, .md table { margin:0 0 10px; }
+  .md h1, .md h2, .md h3, .md h4 { margin:12px 0 6px; line-height:1.3; } .md h1 { font-size:18px } .md h2 { font-size:16px } .md h3, .md h4 { font-size:15px }
+  .md ul, .md ol { padding-left:24px; } .md li { margin:2px 0 } .md li > p { margin:0 }
+  .md code { font-family:var(--mono); font-size:13px; background:var(--card); border:1px solid var(--line); border-radius:4px; padding:1px 4px; }
+  .md pre { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:10px 12px; overflow-x:auto; }
+  .md pre code { border:0; padding:0; background:none; font-size:13px; }
+  .md blockquote { border-left:3px solid var(--line); margin-left:0; padding-left:12px; color:var(--muted); }
+  .md table { border-collapse:collapse; display:block; overflow-x:auto; max-width:100%; }
+  .md th, .md td { border:1px solid var(--line); padding:4px 8px; text-align:left; } .md th { background:var(--card) }
+  .md a { color:var(--accent) } .md hr { border:0; border-top:1px solid var(--line); margin:10px 0 }
   .bot { background:var(--bot); align-self:flex-start; max-width:95%; }
   .bot .meta { display:block; margin-top:8px; font-family:var(--mono); font-size:12px; color:var(--muted); }
   form { position:fixed; left:0; right:0; bottom:0; background:var(--bg); border-top:1px solid var(--line); padding:12px 16px; }
@@ -77,6 +89,8 @@
   </div>
 </form>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/15.0.7/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.4/purify.min.js"></script>
 <script src="config.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
@@ -135,10 +149,19 @@ $('resources').addEventListener('toggle', () => { if ($('resources').open) board
 // One conversation. Clear starts over (so does a page refresh).
 $('clear').addEventListener('click', () => { history.length = 0; $('chat').innerHTML = ''; });
 
+// The model answers in Markdown (**bold**, lists, headings, code); render it, sanitized.
+// If the libraries did not load, fall back to plain text with line breaks kept.
+const md = (window.marked && window.DOMPurify) ? (t) => DOMPurify.sanitize(marked.parse(t, { gfm: true, breaks: true }), { USE_PROFILES: { html: true }, FORBID_TAGS: ['img'] }) : null;
+function render(el, text) {
+  if (md) { el.innerHTML = md(text); el.querySelectorAll('a').forEach(a => { a.target = '_blank'; a.rel = 'noopener'; }); }
+  else { el.style.whiteSpace = 'pre-wrap'; el.textContent = text; }
+}
+
 function add(role, text) {
   const d = document.createElement('div');
   d.className = 'msg ' + (role === 'user' ? 'user' : 'bot');
-  d.appendChild(document.createTextNode(text));   // always a text node, even when empty
+  if (role === 'user') d.appendChild(document.createTextNode(text));
+  else { const c = document.createElement('div'); c.className = 'md'; render(c, text); d.appendChild(c); }
   $('chat').appendChild(d);
   d.scrollIntoView({ block: 'end' });
   return d;
@@ -155,7 +178,8 @@ $('f').addEventListener('submit', async (e) => {
   const bot = add('bot', '');
   const meta = document.createElement('span'); meta.className = 'meta'; meta.textContent = 'waiting for the boards…';
   bot.appendChild(meta);
-  let out = '', t0 = performance.now(), tFirst = null, n = 0, timings = null, poll = null;
+  let out = '', t0 = performance.now(), tFirst = null, n = 0, timings = null, poll = null, raf = 0;
+  const paint = () => { raf = 0; render(bot.firstChild, out); };
   try {
     // While we wait for the first token, show the queue: one stream at a time, served in order.
     poll = setInterval(async () => {
@@ -186,12 +210,13 @@ $('f').addEventListener('submit', async (e) => {
         if (delta) {
           if (tFirst === null) tFirst = performance.now();
           out += delta; n++;
-          bot.firstChild.nodeValue = out;
+          if (!raf) raf = requestAnimationFrame(paint);
           meta.textContent = `${n} tokens · ${(n / ((performance.now() - tFirst) / 1000 || 1e-9)).toFixed(1)} t/s`;
         }
         if (j.timings) timings = j.timings;
       }
     }
+    if (raf) cancelAnimationFrame(raf); paint();
     history.push({ role: 'assistant', content: out });
     const ttft = tFirst ? ((tFirst - t0) / 1000).toFixed(2) : '?';
     const sv = timings ? `${timings.predicted_per_second.toFixed(1)} t/s on the boards, prompt ${timings.prompt_n} tokens in ${(timings.prompt_ms / 1000).toFixed(2)} s` : '';
@@ -201,6 +226,7 @@ $('f').addEventListener('submit', async (e) => {
     meta.className = 'meta bad';
   } finally {
     clearInterval(poll);
+    if (raf) { cancelAnimationFrame(raf); paint(); }
     $('send').disabled = false;
     bot.scrollIntoView({ block: 'end' });
   }
