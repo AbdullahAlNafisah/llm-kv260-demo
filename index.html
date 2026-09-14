@@ -11,7 +11,7 @@
   body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
   main { max-width:760px; margin:0 auto; padding:24px 16px 120px; }
   h1 { font-size:22px; margin:0 0 4px; }
-  .sub { color:var(--muted); margin:0 0 18px; }
+  .sub { color:var(--muted); margin:0 0 18px; } .sub b { color:var(--fg); font-weight:600 }
   .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin-bottom:14px; }
   .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
   label { color:var(--muted); font-size:13px; }
@@ -37,30 +37,9 @@
 <body>
 <main>
   <h1>Four KV260s, one LLM</h1>
-  <p class="sub">Llama-3.2-1B-Instruct (Q4_0, 663 MiB) decoded by four Kria KV260 boards working on <em>one</em> stream: each board streams a quarter of the weights through its own FPGA engine, and they exchange partial sums over a gigabit switch. Every token you see was computed by all four.</p>
-
-  <div class="card">
-    <div class="row">
-      <label for="ep">API</label>
-      <input type="text" id="ep" placeholder="https://…trycloudflare.com">
-      <span id="health" class="stat">checking…</span>
-    </div>
-    <div class="row" style="margin-top:8px">
-      <label>temperature <span id="tval">0.0</span></label>
-      <input type="range" id="temp" min="0" max="1.2" step="0.1" value="0">
-      <label>max tokens</label>
-      <input type="text" id="maxtok" value="160" style="flex:0 0 70px;min-width:0">
-      <span class="stat" id="last"></span>
-    </div>
-  </div>
+  <p class="sub">Model: <b>Llama-3.2-1B-Instruct</b> · quantization: <b>Q4_0</b> (4-bit, 663 MiB) · <span id="health">checking…</span></p>
 
   <div id="chat"></div>
-
-  <details class="card" style="margin-top:14px">
-    <summary>What is behind this page</summary>
-    <p>The API is OpenAI-compatible (<code>/v1/chat/completions</code>, streaming). It runs on board 1 of four AMD Kria KV260s; the boards run a tensor-parallel runtime on a custom int4 weight-streaming engine in each FPGA's fabric (Vitis HLS, 250 MHz, four AXI ports at ~11.6 GB/s). One board alone does ~10 tokens/s; four together ~20. First-token latency is the prompt being processed one token per engine pass, so long prompts wait longer. One prompt is served at a time, in arrival order, so the one stream gets the full rate; if someone else is chatting, yours queues (at most 8 wait).</p>
-    <p>Use it from any OpenAI client with <code>base_url = &lt;API&gt;/v1</code> and any API key.</p>
-  </details>
 </main>
 
 <form id="f">
@@ -74,29 +53,24 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const history = [];
-const ep = $('ep');
-ep.value = localStorage.getItem('kv260-api') || (window.KV260_API || '');
-ep.addEventListener('change', () => { localStorage.setItem('kv260-api', ep.value.trim()); health(); });
-$('temp').addEventListener('input', () => $('tval').textContent = (+$('temp').value).toFixed(1));
+// The API comes from config.js; ?api=https://... overrides it for testing.
+const base = (new URLSearchParams(location.search).get('api') || window.KV260_API || '').replace(/\/+$/, '');
 
 async function health() {
-  const base = ep.value.trim().replace(/\/+$/, '');
   const h = $('health');
-  if (!base) { h.textContent = 'no API URL'; h.className = 'stat bad'; return; }
   try {
-    const r = await fetch(base + '/health', { cache: 'no-store' });
-    const j = await r.json();
+    const j = await (await fetch(base + '/health', { cache: 'no-store' })).json();
     h.innerHTML = `<span class="ok">● online</span>, ${j.ranks} boards` + (j.busy ? `, busy (${j.queued} queued)` : ', idle');
   } catch (e) {
     h.innerHTML = '<span class="bad">● unreachable</span>';
   }
 }
-health();
+health(); setInterval(health, 10000);
 
 function add(role, text) {
   const d = document.createElement('div');
   d.className = 'msg ' + (role === 'user' ? 'user' : 'bot');
-  d.textContent = text;
+  d.appendChild(document.createTextNode(text));   // always a text node, even when empty
   $('chat').appendChild(d);
   d.scrollIntoView({ block: 'end' });
   return d;
@@ -106,7 +80,6 @@ $('f').addEventListener('submit', async (e) => {
   e.preventDefault();
   const text = $('q').value.trim();
   if (!text) return;
-  const base = ep.value.trim().replace(/\/+$/, '');
   $('q').value = '';
   $('send').disabled = true;
   add('user', text);
@@ -124,8 +97,7 @@ $('f').addEventListener('submit', async (e) => {
     }, 1000);
     const r = await fetch(base + '/v1/chat/completions', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: history.slice(-8), max_tokens: parseInt($('maxtok').value) || 160,
-                             temperature: +$('temp').value, stream: true })
+      body: JSON.stringify({ messages: history.slice(-8), max_tokens: 256, temperature: 0, stream: true })
     });
     if (r.status === 429) { clearInterval(poll); throw new Error('the queue is full (one stream at a time, 8 may wait) — try again in a minute'); }
     if (!r.ok) { clearInterval(poll); throw new Error('HTTP ' + r.status); }
@@ -156,9 +128,8 @@ $('f').addEventListener('submit', async (e) => {
     const ttft = tFirst ? ((tFirst - t0) / 1000).toFixed(2) : '?';
     const sv = timings ? `${timings.predicted_per_second.toFixed(1)} t/s on the boards, prompt ${timings.prompt_n} tokens in ${(timings.prompt_ms / 1000).toFixed(2)} s` : '';
     meta.textContent = `${n} tokens · first token ${ttft} s · ${sv}`;
-    $('last').textContent = timings ? `last: ${timings.predicted_per_second.toFixed(1)} t/s` : '';
   } catch (err) {
-    meta.textContent = 'error: ' + err.message + ' — is the API URL right and the tunnel up?';
+    meta.textContent = 'error: ' + err.message;
     meta.className = 'meta bad';
   } finally {
     clearInterval(poll);
