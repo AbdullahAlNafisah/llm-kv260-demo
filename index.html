@@ -111,9 +111,9 @@ async function boards() {
         <div class="legend">Memory BW ${bw > 0 ? bw.toFixed(1) + ' / 19.2 GB/s' : '—'}</div>${bar([['e', bw]], 19.2, true)}
         <div class="legend">RAM ${(b.mem_used_mb / 1024).toFixed(2)} / ${(b.mem_total_mb / 1024).toFixed(1)} GB</div>${bar([['u', b.mem_used_mb]], b.mem_total_mb, true)}
         <div class="kv">
-          <span>weights on this board</span><b>${b.shard_mb.toFixed(0)} MB (heads ${b.heads}, vocab rows ${b.vocab_rows})</b>
-          <span>fabric used</span><b>27% LUT · 18% DSP · 33% BRAM · 250 MHz</b>
-          <span>chip</span><b>${b.temp_c > 0 ? b.temp_c.toFixed(1) + ' °C' : '—'}${b.power_w > 0 ? ' · ' + b.power_w.toFixed(1) + ' W' : ''}</b>
+          <span>Loaded Weights:</span><b>${b.shard_mb.toFixed(0)} MB (heads ${b.heads}, vocab rows ${b.vocab_rows})</b>
+          <span>Programmable Logic:</span><b>27% LUT · 18% DSP · 33% BRAM · 250 MHz</b>
+          <span>Environment:</span><b>${b.temp_c > 0 ? b.temp_c.toFixed(1) + ' °C' : '—'}${b.power_w > 0 ? ' · ' + b.power_w.toFixed(1) + ' W' : ''}</b>
         </div>
       </div>`;
     }).join('');
