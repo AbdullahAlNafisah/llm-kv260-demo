@@ -136,7 +136,7 @@ async function boards() {
     $('system').innerHTML = `
         <h3><span>System · ${nb} boards · ${j.model || ''}</span><span class="st ${on ? 'on' : ''}">${on ? '● decoding' : '○ idle'}</span></h3>
         ${c.n_gen > 0 ? `
-        <div class="legend">Last chat: <b>${c.n_gen}</b> tokens at <b>${c.tps.toFixed(1)} t/s</b> · first token after ${(c.prompt_ms / 1000).toFixed(2)} s (${c.n_prompt}-token prompt) · per token ${tok.toFixed(0)} ms: <i class="e"></i>${c.engine_ms.toFixed(0)} ms (fabric) + <i class="c"></i>${c.cpu_ms.toFixed(0)} ms (cpu) + <i class="x"></i>${c.exchange_ms.toFixed(0)} ms (interfaces)</div>
+        <div class="legend">Last chat: <b>${c.n_gen}</b> tokens at <b>${c.tps.toFixed(1)} t/s</b> · first token after ${(c.prompt_ms / 1000).toFixed(2)} s (${c.n_prompt}-token prompt) · average consumed time ${tok.toFixed(0)} ms: <i class="e"></i>${c.engine_ms.toFixed(0)} ms (fabric) + <i class="c"></i>${c.cpu_ms.toFixed(0)} ms (cpu) + <i class="x"></i>${c.exchange_ms.toFixed(0)} ms (interfaces)</div>
         ${bar([['e', c.engine_ms], ['c', c.cpu_ms], ['x', c.exchange_ms]], tok)}`
         : `<div class="legend">Last chat: none yet — send a prompt and the average per-token split appears here.</div>${bar([], 1)}`}
         <div class="sys">
