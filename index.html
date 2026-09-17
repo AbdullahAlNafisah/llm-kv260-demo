@@ -17,7 +17,6 @@
   .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
   label { color:var(--muted); font-size:13px; }
   input[type=text] { flex:1; min-width:240px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--fg); font-family:var(--mono); font-size:13px; }
-  input[type=range] { width:120px }
   .stat { font-family:var(--mono); font-size:13px; color:var(--muted); }
   .stat b { color:var(--fg); font-weight:600 }
   #chat { display:flex; flex-direction:column; gap:10px; min-height:200px; }
@@ -86,8 +85,6 @@
   </details>
 
   <div class="row" style="justify-content:flex-end;margin:6px 0 10px">
-    <label for="maxtok">Reply limit <b id="maxtokv" class="stat"></b></label>
-    <input id="maxtok" type="range" min="64" max="1024" step="64" value="512" title="Longest reply, in tokens. The boards decode about 20 tokens a second.">
     <button id="clear" type="button" class="ghost">Clear chat</button>
   </div>
   <div id="chat"></div>
@@ -179,14 +176,10 @@ let tick = 0;
 boards(); setInterval(() => { if ($('resources').open || ++tick % 5 === 0) boards(); }, 1000);
 $('resources').addEventListener('toggle', () => { if ($('resources').open) boards(); });
 
-// The reply limit: the range next to Clear chat, remembered in this browser.
-// The server clamps it to what fits its context after the prompt.
+// Every reply runs as long as the context allows: the server clamps
+// max_tokens to ctx_max - prompt - 1 (tp_llama.cpp), so asking for the whole
+// context asks for the most that can actually fit after the prompt.
 const CTX = 2048;   // tp_llama's --ctx; serve-tp.sh runs the default
-const maxtok = $('maxtok');
-try { const v = parseInt(localStorage.getItem('kv260.maxtok')); if (v >= 64 && v <= 1024) maxtok.value = v; } catch (e) {}
-const showMax = () => { $('maxtokv').textContent = maxtok.value + ' tokens'; };
-maxtok.addEventListener('input', () => { showMax(); try { localStorage.setItem('kv260.maxtok', maxtok.value); } catch (e) {} });
-showMax();
 
 // Example prompts: one click sends one. Shown while the chat is empty.
 const EXAMPLES = ['Explain what an FPGA is to a high-school student.',
@@ -284,7 +277,7 @@ $('f').addEventListener('submit', async (e) => {
     }, 1000);
     const r = await fetch(base + '/v1/chat/completions', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: history.slice(-8), max_tokens: parseInt(maxtok.value), temperature: 0, stream: true })
+      body: JSON.stringify({ messages: history.slice(-8), max_tokens: CTX, temperature: 0, stream: true })
     });
     if (r.status === 429) { clearInterval(poll); throw new Error('the queue is full (one stream at a time, 8 may wait) — try again in a minute'); }
     if (!r.ok) { clearInterval(poll); throw new Error('HTTP ' + r.status); }
@@ -317,7 +310,7 @@ $('f').addEventListener('submit', async (e) => {
     const ttft = tFirst ? ((tFirst - t0) / 1000).toFixed(2) : '?';
     // The prompt is the whole conversation sent (the last 8 turns), so prompt + reply is what this turn used of the context.
     const sv = timings ? `${timings.predicted_per_second.toFixed(1)} t/s on the boards, prompt ${timings.prompt_n} tokens in ${(timings.prompt_ms / 1000).toFixed(2)} s · context ${timings.prompt_n + timings.predicted_n} / ${CTX}` : '';
-    meta.textContent = `${n} tokens · first token ${ttft} s · ${sv}` + (finish === 'length' ? ` · cut at the ${maxtok.value}-token limit (raise it above)` : '');
+    meta.textContent = `${n} tokens · first token ${ttft} s · ${sv}` + (finish === 'length' ? ` · cut at the ${CTX}-token context limit (Clear chat to start over)` : '');
   } catch (err) {
     meta.textContent = 'error: ' + err.message;
     meta.className = 'meta bad';
