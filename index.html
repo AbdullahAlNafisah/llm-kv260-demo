@@ -134,8 +134,12 @@ async function boards() {
     const power = j.boards.reduce((a, b) => a + (b.power_w > 0 ? b.power_w : 0), 0);
     const temp = Math.max(...j.boards.map(b => b.temp_c));
     const memUsed = j.boards.reduce((a, b) => a + b.mem_used_mb, 0), memTotal = j.boards.reduce((a, b) => a + b.mem_total_mb, 0);
-    // Every engine reads its whole shard once per token, so weights / mean fabric time is what the four drew together.
-    const bwAll = c.engine_ms > 0 ? weights / c.engine_ms : 0;   // MB/ms = GB/s
+    // Every engine reads its whole shard once per token, so the shard is the numerator.
+    // The denominator is the WHOLE token, not the fabric term: gemv2 prefetches the next
+    // matrix during the exchange and the CPU work, so the fabric term is not the window
+    // the DRAM was busy in, and dividing by it read ~18.5 GB/s a board -- above what the
+    // DRAM can deliver at all (12.7 GB/s measured, docs/buildlog/0012).
+    const bwAll = tok > 0 ? weights / tok : 0;   // MB/ms = GB/s, averaged over the token
     $('system').innerHTML = `
         <h3><span>System · ${nb} boards · ${j.model || ''}</span><span class="st ${on ? 'on' : ''}">${on ? '● decoding' : '○ idle'}</span></h3>
         ${c.n_gen > 0 ? `
@@ -144,7 +148,7 @@ async function boards() {
         : `<div class="legend">Last chat: none yet — send a prompt and the average per-token split appears here.</div>${bar([], 1)}`}
         <div class="sys">
           <span>Weights: <b>${weights.toFixed(0)} MB</b> in engine memory</span>
-          <span>Memory BW: <b>${bwAll > 0 ? bwAll.toFixed(1) + ' / ' + (19.2 * nb).toFixed(1) + ' GB/s' : '—'}</b></span>
+          <span title="Weight bytes streamed per token divided by the whole per-token time: the average DRAM rate the decode sustains, not the peak while streaming (the bench measures 12.7 GB/s a board). Counts weight bytes only; the KV cache and activations add a little more.">Memory BW (token avg): <b>${bwAll > 0 ? bwAll.toFixed(1) + ' / ' + (19.2 * nb).toFixed(1) + ' GB/s' : '—'}</b></span>
           <span>Power: <b>${power > 0 ? power.toFixed(1) + ' W' : '—'}</b></span>
           <span>Hottest: <b>${temp > 0 ? temp.toFixed(1) + ' °C' : '—'}</b></span>
           <span>RAM: <b>${(memUsed / 1024).toFixed(1)} / ${(memTotal / 1024).toFixed(1)} GB</b></span>
@@ -153,11 +157,13 @@ async function boards() {
         </div>`;
     const stale = j.sample_age_s < 0;
     g.innerHTML = j.boards.map(b => {
-      // The engine reads this board's whole shard once per token, so shard / fabric time is the bandwidth it drew.
-      const bw = b.engine_ms > 0 ? b.shard_mb / b.engine_ms : 0;   // MB/ms = GB/s
+      // Shard over the whole token, for the reason above the system bar: once gemv2
+      // prefetches, the fabric term is not the window the DRAM was busy in.
+      const tokB = (b.engine_ms || 0) + (b.cpu_ms || 0) + (b.exchange_ms || 0);
+      const bw = tokB > 0 ? b.shard_mb / tokB : 0;   // MB/ms = GB/s, averaged over the token
       return `<div class="board">
         <h3><span>${b.host || 'board ' + (b.rank + 1)}</span><span class="st ${on ? 'on' : ''}">${on ? '● decoding ' + b.tps.toFixed(1) + ' t/s' : '○ idle'}</span></h3>
-        <div class="legend">Memory BW ${bw > 0 && !stale ? bw.toFixed(1) + ' / 19.2 GB/s' : '—'}</div>${bar([['e', bw]], 19.2, true)}
+        <div class="legend" title="Shard bytes per token over the whole per-token time — the average DRAM rate, not the peak while streaming.">Memory BW (token avg) ${bw > 0 && !stale ? bw.toFixed(1) + ' / 19.2 GB/s' : '—'}</div>${bar([['e', bw]], 19.2, true)}
         <div class="legend">RAM ${(b.mem_used_mb / 1024).toFixed(2)} / ${(b.mem_total_mb / 1024).toFixed(1)} GB</div>${bar([['u', b.mem_used_mb]], b.mem_total_mb, true)}
         ${plRow('lut')}${plRow('dsp')}${plRow('bram')}
         <div class="kv">
