@@ -65,12 +65,20 @@
   .legend { font-size:12px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .legend i { display:inline-block; width:8px; height:8px; border-radius:2px; margin:0 3px 0 6px; vertical-align:middle }
   button.ghost { background:transparent; color:var(--muted); border:1px solid var(--line); padding:4px 10px; font-size:13px; }
-  #resources { margin-bottom:6px; }
-  #resources > summary { cursor:pointer; list-style:none; display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border:1px solid var(--line); border-radius:8px; color:var(--fg); font-size:13px; user-select:none; }
-  #resources > summary::-webkit-details-marker { display:none }
-  #resources > summary::before { content:"▸"; display:inline-block; transition:transform .15s; color:var(--muted); }
-  #resources[open] > summary::before { transform:rotate(90deg); }
-  #resources[open] > summary { margin-bottom:10px; }
+  details.fold { margin-bottom:6px; }
+  details.fold > summary { cursor:pointer; list-style:none; display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border:1px solid var(--line); border-radius:8px; color:var(--fg); font-size:13px; user-select:none; }
+  details.fold > summary::-webkit-details-marker { display:none }
+  details.fold > summary::before { content:"▸"; display:inline-block; transition:transform .15s; color:var(--muted); }
+  details.fold[open] > summary::before { transform:rotate(90deg); }
+  details.fold[open] > summary { margin-bottom:10px; }
+  /* the pipeline card: two inline SVGs that scroll sideways on a phone rather than shrink their text */
+  #pipeline figure { margin:0; }
+  #pipeline figure + figure { margin-top:16px; padding-top:14px; border-top:1px solid var(--line); }
+  #pipeline figcaption { font-size:12px; color:var(--muted); margin:6px 0 0; }
+  #pipeline ul { font-size:12px; color:var(--muted); margin:6px 0 0; padding-left:20px; } #pipeline li { margin:2px 0 }
+  .diagram { overflow-x:auto; }
+  .diagram svg { display:block; max-width:100%; height:auto; }
+  .diagram.a svg { min-width:680px; } .diagram.b svg { min-width:800px; }
   code { font-family:var(--mono); font-size:13px }
 </style>
 </head>
@@ -79,9 +87,227 @@
   <h1>Edge FPGA-based LLM</h1>
   <div id="system" class="board"></div>
 
-  <details id="resources">
+  <details id="resources" class="fold">
     <summary>Resources</summary>
     <div id="grid" class="grid"></div>
+  </details>
+
+  <details id="pipeline" class="fold">
+    <summary>Pipeline</summary>
+    <div class="card">
+      <figure>
+        <div class="diagram a">
+<svg viewBox="0 0 850 1084" role="img" aria-label="One token on one board: prompt, tokenize and broadcast, embed, sixteen layers of RMSNorm, q|k|v on the engine, RoPE and attention, o_proj on the engine, an all-reduce over the four boards, residual and RMSNorm, gate|up on the engine, SiLU, down on the engine, a second all-reduce, residual; then RMSNorm, lm_head on the engine, top-40, an all-gather of candidates and the same sampler on every rank, and the token feeds back as the next embed" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"><defs><marker id="pa-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker><marker id="pa-arrx" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#e0a100"/></marker><marker id="pa-arrx-s" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M10,0 L0,5 L10,10 z" fill="#e0a100"/></marker></defs>
+<text x="96" y="18" font-size="13" text-anchor="start" font-weight="600">One token, on every board</text>
+<text x="96" y="36" font-size="11.5" text-anchor="start">per token, last chat: <tspan fill="#0b5fff" font-weight="600" id="pl-eng">—</tspan> ms fabric · <tspan fill="#8a8a8a" font-weight="600" id="pl-cpu">—</tspan> ms A53 · <tspan fill="#e0a100" font-weight="600" id="pl-exch">—</tspan> ms exchange = <tspan font-weight="600" id="pl-tok">—</tspan> ms → <tspan font-weight="600" id="pl-tps">—</tspan> t/s</text>
+<text x="96" y="52" font-size="11.5" text-anchor="start" opacity="0.85">first token after <tspan font-weight="600" id="pl-first">—</tspan> s: a <tspan id="pl-nprompt">—</tspan>-token prompt runs this loop once per prompt token</text>
+<text x="96" y="68" font-size="11.5" text-anchor="start" opacity="0.85">65 engine calls and 33 exchange rounds per token; the FIFOs already hold the next matrix</text>
+<rect x="96" y="92" width="520" height="34" rx="6" fill="none" stroke="currentColor" stroke-width="1.2"/>
+<text x="108" y="106" font-size="12" text-anchor="start" font-weight="600">prompt</text>
+<text x="108" y="120" font-size="11" text-anchor="start" opacity="0.78">chat template applied by libllama on rank 0 (HTTP request)</text>
+<line x1="356" y1="126" x2="356" y2="140" stroke="currentColor" stroke-width="1.2" marker-end="url(#pa-arr)"/>
+<rect x="96" y="140" width="520" height="34" rx="6" fill="#e0a100" fill-opacity="0.13" stroke="#e0a100" stroke-width="1.2"/>
+<text x="108" y="154" font-size="12" text-anchor="start" font-weight="600">tokenize on rank 0 · bcast token ids</text>
+<text x="108" y="168" font-size="11" text-anchor="start" opacity="0.78">rank 0 → ranks 1–3 over the mesh; then every rank runs the same loop</text>
+<line x1="356" y1="174" x2="356" y2="188" stroke="currentColor" stroke-width="1.2" marker-end="url(#pa-arr)"/>
+<rect x="96" y="188" width="520" height="34" rx="6" fill="#8a8a8a" fill-opacity="0.13" stroke="#8a8a8a" stroke-width="1.2"/>
+<text x="108" y="202" font-size="12" text-anchor="start" font-weight="600">embed</text>
+<text x="108" y="216" font-size="11" text-anchor="start" opacity="0.78">token_embd row (Q4_0, mmapped GGUF) → x: float32[2048]</text>
+<line x1="356" y1="222" x2="356" y2="252" stroke="currentColor" stroke-width="1.2" marker-end="url(#pa-arr)"/>
+<rect x="96" y="252" width="520" height="34" rx="6" fill="#8a8a8a" fill-opacity="0.13" stroke="#8a8a8a" stroke-width="1.2"/>
+<text x="108" y="266" font-size="12" text-anchor="start" font-weight="600">RMSNorm (attn_norm)</text>
+<text x="108" y="280" font-size="11" text-anchor="start" opacity="0.78">h = x / rms(x) · w</text>
+<line x1="356" y1="286" x2="356" y2="300" stroke="currentColor" stroke-width="1.2" marker-end="url(#pa-arr)"/>
+<rect x="96" y="300" width="520" height="34" rx="6" fill="#0b5fff" fill-opacity="0.13" stroke="#0b5fff" stroke-width="1.2"/>
+<text x="108" y="314" font-size="12" text-anchor="start" font-weight="600">engine: q | k | v</text>
+<text x="108" y="328" font-size="11" text-anchor="start" opacity="0.78">W[768 × 2048]: this rank's 8 q, 2 k, 2 v heads · x → Q8_0 first</text>
+<line x1="356" y1="334" x2="356" y2="348" stroke="currentColor" stroke-width="1.2" marker-end="url(#pa-arr)"/>
+<rect x="96" y="348" width="520" height="34" rx="6" fill="#8a8a8a" fill-opacity="0.13" stroke="#8a8a8a" stroke-width="1.2"/>
+<text x="108" y="362" font-size="12" text-anchor="start" font-weight="600">RoPE · K,V → cache · attention</text>
+<text x="108" y="376" font-size="11" text-anchor="start" opacity="0.78">KV cache [layer][kv head][pos][64] · 8 q over 2 KV heads (GQA), NEON</text>
+<line x1="356" y1="382" x2="356" y2="396" stroke="currentColor" stroke-width="1.2" marker-end="url(#pa-arr)"/>
+<rect x="96" y="396" width="520" height="34" rx="6" fill="#0b5fff" fill-opacity="0.13" stroke="#0b5fff" stroke-width="1.2"/>
+<text x="108" y="410" font-size="12" text-anchor="start" font-weight="600">engine: o_proj</text>
+<text x="108" y="424" font-size="11" text-anchor="start" opacity="0.78">W[2048 × 512]: this rank's 512 input columns → partial[2048]</text>
+<line x1="356" y1="430" x2="356" y2="444" stroke="currentColor" stroke-width="1.2" marker-end="url(#pa-arr)"/>
+<rect x="96" y="444" width="520" height="34" rx="6" fill="#e0a100" fill-opacity="0.13" stroke="#e0a100" stroke-width="1.2"/>
+<text x="108" y="458" font-size="12" text-anchor="start" font-weight="600">all-reduce Σ partial</text>
+<text x="108" y="472" font-size="11" text-anchor="start" opacity="0.78">reduce-scatter (own quarter, rank order) + all-gather, 12 KB each way</text>
+<line x1="356" y1="478" x2="356" y2="492" stroke="currentColor" stroke-width="1.2" marker-end="url(#pa-arr)"/>
+<rect x="96" y="492" width="520" height="34" rx="6" fill="#8a8a8a" fill-opacity="0.13" stroke="#8a8a8a" stroke-width="1.2"/>
+<text x="108" y="506" font-size="12" text-anchor="start" font-weight="600">x += Σ · RMSNorm (ffn_norm)</text>
+<text x="108" y="520" font-size="11" text-anchor="start" opacity="0.78">residual, then h = x / rms(x) · w</text>
+<line x1="356" y1="526" x2="356" y2="540" stroke="currentColor" stroke-width="1.2" marker-end="url(#pa-arr)"/>
+<rect x="96" y="540" width="520" height="34" rx="6" fill="#0b5fff" fill-opacity="0.13" stroke="#0b5fff" stroke-width="1.2"/>
+<text x="108" y="554" font-size="12" text-anchor="start" font-weight="600">engine: gate | up</text>
+<text x="108" y="568" font-size="11" text-anchor="start" opacity="0.78">W[4096 × 2048]: this rank's 2048 of the 8192 hidden units</text>
+<line x1="356" y1="574" x2="356" y2="588" stroke="currentColor" stroke-width="1.2" marker-end="url(#pa-arr)"/>
+<rect x="96" y="588" width="520" height="34" rx="6" fill="#8a8a8a" fill-opacity="0.13" stroke="#8a8a8a" stroke-width="1.2"/>
+<text x="108" y="602" font-size="12" text-anchor="start" font-weight="600">act = SiLU(gate) · up</text>
+<text x="108" y="616" font-size="11" text-anchor="start" opacity="0.78">float32[2048], NEON</text>
+<line x1="356" y1="622" x2="356" y2="636" stroke="currentColor" stroke-width="1.2" marker-end="url(#pa-arr)"/>
+<rect x="96" y="636" width="520" height="34" rx="6" fill="#0b5fff" fill-opacity="0.13" stroke="#0b5fff" stroke-width="1.2"/>
+<text x="108" y="650" font-size="12" text-anchor="start" font-weight="600">engine: down</text>
+<text x="108" y="664" font-size="11" text-anchor="start" opacity="0.78">W[2048 × 2048]: this rank's 2048 input columns → partial[2048]</text>
+<line x1="356" y1="670" x2="356" y2="684" stroke="currentColor" stroke-width="1.2" marker-end="url(#pa-arr)"/>
+<rect x="96" y="684" width="520" height="34" rx="6" fill="#e0a100" fill-opacity="0.13" stroke="#e0a100" stroke-width="1.2"/>
+<text x="108" y="698" font-size="12" text-anchor="start" font-weight="600">all-reduce Σ partial</text>
+<text x="108" y="712" font-size="11" text-anchor="start" opacity="0.78">two rounds again; float32 sums in the same order on every rank</text>
+<line x1="356" y1="718" x2="356" y2="732" stroke="currentColor" stroke-width="1.2" marker-end="url(#pa-arr)"/>
+<rect x="96" y="732" width="520" height="34" rx="6" fill="#8a8a8a" fill-opacity="0.13" stroke="#8a8a8a" stroke-width="1.2"/>
+<text x="108" y="746" font-size="12" text-anchor="start" font-weight="600">x += Σ</text>
+<text x="108" y="760" font-size="11" text-anchor="start" opacity="0.78">residual; the hidden state is bit-identical on all four ranks</text>
+<rect x="82" y="232" width="548" height="542" rx="8" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3" opacity="0.6"/>
+<text x="624" y="245" font-size="11" text-anchor="end" font-weight="600">× 16 layers</text>
+<line x1="356" y1="766" x2="356" y2="790" stroke="currentColor" stroke-width="1.2" marker-end="url(#pa-arr)"/>
+<rect x="96" y="790" width="520" height="34" rx="6" fill="#8a8a8a" fill-opacity="0.13" stroke="#8a8a8a" stroke-width="1.2"/>
+<text x="108" y="811" font-size="12" text-anchor="start" font-weight="600">RMSNorm (output_norm)</text>
+<line x1="356" y1="824" x2="356" y2="838" stroke="currentColor" stroke-width="1.2" marker-end="url(#pa-arr)"/>
+<rect x="96" y="838" width="520" height="34" rx="6" fill="#0b5fff" fill-opacity="0.13" stroke="#0b5fff" stroke-width="1.2"/>
+<text x="108" y="852" font-size="12" text-anchor="start" font-weight="600">engine: lm_head</text>
+<text x="108" y="866" font-size="11" text-anchor="start" opacity="0.78">W[32064 × 2048]: this rank's quarter of the 128 256 vocab → logits</text>
+<line x1="356" y1="872" x2="356" y2="886" stroke="currentColor" stroke-width="1.2" marker-end="url(#pa-arr)"/>
+<rect x="96" y="886" width="520" height="34" rx="6" fill="#8a8a8a" fill-opacity="0.13" stroke="#8a8a8a" stroke-width="1.2"/>
+<text x="108" y="900" font-size="12" text-anchor="start" font-weight="600">top-40 of this rank's logits</text>
+<text x="108" y="914" font-size="11" text-anchor="start" opacity="0.78">insertion into a 40-entry list, plus this rank's timing sample</text>
+<line x1="356" y1="920" x2="356" y2="934" stroke="currentColor" stroke-width="1.2" marker-end="url(#pa-arr)"/>
+<rect x="96" y="934" width="520" height="34" rx="6" fill="#e0a100" fill-opacity="0.13" stroke="#e0a100" stroke-width="1.2"/>
+<text x="108" y="948" font-size="12" text-anchor="start" font-weight="600">all-gather candidates</text>
+<text x="108" y="962" font-size="11" text-anchor="start" opacity="0.78">40 × (float, id) + stats per rank, one round</text>
+<line x1="356" y1="968" x2="356" y2="982" stroke="currentColor" stroke-width="1.2" marker-end="url(#pa-arr)"/>
+<rect x="96" y="982" width="520" height="34" rx="6" fill="#8a8a8a" fill-opacity="0.13" stroke="#8a8a8a" stroke-width="1.2"/>
+<text x="108" y="996" font-size="12" text-anchor="start" font-weight="600">argmax, or the seeded sampler over 160 candidates</text>
+<text x="108" y="1010" font-size="11" text-anchor="start" opacity="0.78">same on every rank: temperature, top-p, mt19937 seeded per request</text>
+<line x1="356" y1="1016" x2="356" y2="1030" stroke="currentColor" stroke-width="1.2" marker-end="url(#pa-arr)"/>
+<rect x="96" y="1030" width="520" height="34" rx="6" fill="none" stroke="currentColor" stroke-width="1.2"/>
+<text x="108" y="1044" font-size="12" text-anchor="start" font-weight="600">token</text>
+<text x="108" y="1058" font-size="11" text-anchor="start" opacity="0.78">rank 0 streams it (SSE); every rank feeds it back as the next embed</text>
+<line x1="758" y1="110" x2="758" y2="965" stroke="currentColor" stroke-width="1.2" opacity="0.45"/>
+<line x1="764" y1="110" x2="764" y2="965" stroke="currentColor" stroke-width="1.2" opacity="0.9"/>
+<line x1="770" y1="110" x2="770" y2="965" stroke="currentColor" stroke-width="1.2" opacity="0.45"/>
+<text x="764" y="88" font-size="12" text-anchor="middle" font-weight="600">ranks 1–3</text>
+<text x="764" y="101" font-size="10.5" text-anchor="middle" opacity="0.8">boards 2 · 3 · 4</text>
+<text x="764" y="981" font-size="10.5" text-anchor="middle" opacity="0.8">TCP mesh · MTU 9000</text>
+<text x="764" y="994" font-size="10.5" text-anchor="middle" opacity="0.8">polled reads</text>
+<line x1="616" y1="157" x2="756" y2="157" stroke="#e0a100" stroke-width="1.4" marker-end="url(#pa-arrx)"/>
+<text x="690" y="152" font-size="10.5" text-anchor="middle" fill="#e0a100">ids, 0 → 1, 2, 3</text>
+<line x1="616" y1="461" x2="756" y2="461" stroke="#e0a100" stroke-width="1.4" marker-start="url(#pa-arrx-s)" marker-end="url(#pa-arrx)"/>
+<text x="690" y="456" font-size="10.5" text-anchor="middle" fill="#e0a100">12 KB each way</text>
+<line x1="616" y1="701" x2="756" y2="701" stroke="#e0a100" stroke-width="1.4" marker-start="url(#pa-arrx-s)" marker-end="url(#pa-arrx)"/>
+<text x="690" y="696" font-size="10.5" text-anchor="middle" fill="#e0a100">12 KB each way</text>
+<line x1="616" y1="951" x2="756" y2="951" stroke="#e0a100" stroke-width="1.4" marker-start="url(#pa-arrx-s)" marker-end="url(#pa-arrx)"/>
+<text x="690" y="946" font-size="10.5" text-anchor="middle" fill="#e0a100">40 × 8 B + stats</text>
+<path d="M96,1047 H70 V205 H94" fill="none" stroke="currentColor" stroke-width="1.2" marker-end="url(#pa-arr)"/>
+<text x="64" y="626" font-size="11" text-anchor="middle" transform="rotate(-90 64 626)">next token, pos + 1</text></svg>
+        </div>
+        <figcaption>How one token is produced. Every board runs this loop on its own quarter of every matrix; the two all-reduces and the candidate all-gather are the only traffic between them. Colours are the three per-token buckets the system bar reports; the numbers are the last chat's per-token averages from <code>/stats</code>.</figcaption>
+      </figure>
+      <figure>
+        <div class="diagram b">
+<svg viewBox="0 0 960 570" role="img" aria-label="One board: the A53 runtime and DDR4 on the processing system side; gemv_fetch, eight UltraRAM AXI-Stream FIFOs and gemv_mac on the programmable logic side. Weights stream from DDR4 over the four 128-bit HP ports into gemv_fetch, through the FIFOs into the MAC units; activations in and results out go through a 9-to-1 SmartConnect on HPC0; control is AXI-Lite over HPM0 through a SmartConnect to both kernels; the exchange with the other boards leaves over gigabit Ethernet" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"><defs><marker id="pb-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker><marker id="pb-arr-s" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M10,0 L0,5 L10,10 z" fill="currentColor"/></marker><marker id="pb-arre" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#0b5fff"/></marker><marker id="pb-arre-s" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M10,0 L0,5 L10,10 z" fill="#0b5fff"/></marker><marker id="pb-arrx" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#e0a100"/></marker><marker id="pb-arrx-s" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M10,0 L0,5 L10,10 z" fill="#e0a100"/></marker></defs>
+<rect x="20" y="40" width="320" height="470" rx="10" fill="none" stroke="currentColor" stroke-width="1.2"/>
+<text x="32" y="30" font-size="13" text-anchor="start" font-weight="600">PS · Zynq UltraScale+ (K26)</text>
+<rect x="40" y="60" width="280" height="150" rx="6" fill="#8a8a8a" fill-opacity="0.10" stroke="#8a8a8a" stroke-width="1.2"/>
+<text x="52" y="78" font-size="12" text-anchor="start" font-weight="600">DDR4 · 4 GB</text>
+<text x="52" y="95" font-size="10.5" text-anchor="start" opacity="0.8">u-dma-buf pools 512 + 256 + 128 MiB</text>
+<text x="52" y="115" font-size="10.5" text-anchor="start">shard: <tspan font-weight="600" id="pl-shard">—</tspan> MB Q4_0, read every token</text>
+<text x="52" y="130" font-size="10.5" text-anchor="start" opacity="0.8">4 quarters per matrix, ≠ offsets mod 64 KB</text>
+<text x="52" y="152" font-size="10.5" text-anchor="start">x: int8[K] + f32[K/32]  (Q8_0)</text>
+<text x="52" y="167" font-size="10.5" text-anchor="start">y: f32[rows]</text>
+<text x="52" y="189" font-size="10.5" text-anchor="start" opacity="0.8">dc cvac x · dc civac y, from user space</text>
+<rect x="40" y="240" width="280" height="66" rx="6" fill="#8a8a8a" fill-opacity="0.10" stroke="#8a8a8a" stroke-width="1.2"/>
+<text x="52" y="258" font-size="12" text-anchor="start" font-weight="600">Cortex-A53 × 4 · 1.33 GHz</text>
+<text x="52" y="275" font-size="10.5" text-anchor="start" opacity="0.8">tp_llama on CPU 2: NEON ops, calls,</text>
+<text x="52" y="290" font-size="10.5" text-anchor="start" opacity="0.8">exchange, sampling · one thread</text>
+<rect x="40" y="340" width="280" height="58" rx="6" fill="#e0a100" fill-opacity="0.10" stroke="#e0a100" stroke-width="1.2"/>
+<text x="52" y="358" font-size="12" text-anchor="start" font-weight="600">GbE (macb) · MTU 9000 → switch</text>
+<text x="52" y="375" font-size="10.5" text-anchor="start" opacity="0.8">TCP mesh to ranks 1–3, polled reads</text>
+<path d="M180,306 L180,340" fill="none" stroke="#e0a100" stroke-width="1.4" marker-start="url(#pb-arrx-s)" marker-end="url(#pb-arrx)"/>
+<text x="192" y="327" font-size="10" text-anchor="start" opacity="0.8">32 all-reduce + 1 all-gather</text>
+<rect x="500" y="40" width="440" height="470" rx="10" fill="none" stroke="currentColor" stroke-width="1.2"/>
+<text x="512" y="30" font-size="13" text-anchor="start" font-weight="600">PL · 250 MHz · 50% LUT · 37% DSP · 100% URAM</text>
+<rect x="520" y="60" width="400" height="62" rx="6" fill="#0b5fff" fill-opacity="0.10" stroke="#0b5fff" stroke-width="1.2"/>
+<text x="532" y="78" font-size="12" text-anchor="start" font-weight="600">gemv_fetch · 4 burst readers, one per HP port</text>
+<text x="532" y="95" font-size="10.5" text-anchor="start" opacity="0.8">16 outstanding × 64 beats · 144 B chunks → FIFO pa / pb</text>
+<text x="532" y="110" font-size="10.5" text-anchor="start" opacity="0.8">started with the next matrix while the A53 works</text>
+<rect x="520" y="160" width="400" height="72" rx="6" fill="#0b5fff" fill-opacity="0.10" stroke="#0b5fff" stroke-width="1.2"/>
+<text x="532" y="177" font-size="11" text-anchor="start" font-weight="600">8 × axis_data_fifo · 16384 × 128 b · UltraRAM, 2 MB</text>
+<rect x="532" y="190" width="38" height="30" rx="3" fill="#0b5fff" fill-opacity="0.10" stroke="#0b5fff" stroke-width="1"/>
+<text x="551" y="209" font-size="10" text-anchor="middle">s0a</text>
+<rect x="580" y="190" width="38" height="30" rx="3" fill="#0b5fff" fill-opacity="0.10" stroke="#0b5fff" stroke-width="1"/>
+<text x="599" y="209" font-size="10" text-anchor="middle">s0b</text>
+<rect x="628" y="190" width="38" height="30" rx="3" fill="#0b5fff" fill-opacity="0.10" stroke="#0b5fff" stroke-width="1"/>
+<text x="647" y="209" font-size="10" text-anchor="middle">s1a</text>
+<rect x="676" y="190" width="38" height="30" rx="3" fill="#0b5fff" fill-opacity="0.10" stroke="#0b5fff" stroke-width="1"/>
+<text x="695" y="209" font-size="10" text-anchor="middle">s1b</text>
+<rect x="724" y="190" width="38" height="30" rx="3" fill="#0b5fff" fill-opacity="0.10" stroke="#0b5fff" stroke-width="1"/>
+<text x="743" y="209" font-size="10" text-anchor="middle">s2a</text>
+<rect x="772" y="190" width="38" height="30" rx="3" fill="#0b5fff" fill-opacity="0.10" stroke="#0b5fff" stroke-width="1"/>
+<text x="791" y="209" font-size="10" text-anchor="middle">s2b</text>
+<rect x="820" y="190" width="38" height="30" rx="3" fill="#0b5fff" fill-opacity="0.10" stroke="#0b5fff" stroke-width="1"/>
+<text x="839" y="209" font-size="10" text-anchor="middle">s3a</text>
+<rect x="868" y="190" width="38" height="30" rx="3" fill="#0b5fff" fill-opacity="0.10" stroke="#0b5fff" stroke-width="1"/>
+<text x="887" y="209" font-size="10" text-anchor="middle">s3b</text>
+<rect x="520" y="270" width="400" height="100" rx="6" fill="#0b5fff" fill-opacity="0.10" stroke="#0b5fff" stroke-width="1.2"/>
+<text x="532" y="288" font-size="12" text-anchor="start" font-weight="600">gemv_mac · 8 MAC units, 2 per port</text>
+<text x="532" y="306" font-size="10.5" text-anchor="start" opacity="0.8">unpack · 32 int4×int8 → int32 → ×d_w ×d_x → 8 lanes → tree</text>
+<text x="532" y="321" font-size="10.5" text-anchor="start" opacity="0.8">x in 8 BRAM copies · rows_per_mac = 0 drains the FIFOs</text>
+<text x="532" y="336" font-size="10.5" text-anchor="start" opacity="0.8">y: f32 rows, 4 per 128 b beat</text>
+<text x="532" y="356" font-size="10.5" text-anchor="start" opacity="0.8">bit-exact with src/llm_kv260/q4_0.py, checked on every board</text>
+<path d="M551,122 L551,190" fill="none" stroke="#0b5fff" stroke-width="1.2" marker-end="url(#pb-arre)"/>
+<path d="M551,220 L551,270" fill="none" stroke="#0b5fff" stroke-width="1.2" marker-end="url(#pb-arre)"/>
+<path d="M599,122 L599,190" fill="none" stroke="#0b5fff" stroke-width="1.2" marker-end="url(#pb-arre)"/>
+<path d="M599,220 L599,270" fill="none" stroke="#0b5fff" stroke-width="1.2" marker-end="url(#pb-arre)"/>
+<path d="M647,122 L647,190" fill="none" stroke="#0b5fff" stroke-width="1.2" marker-end="url(#pb-arre)"/>
+<path d="M647,220 L647,270" fill="none" stroke="#0b5fff" stroke-width="1.2" marker-end="url(#pb-arre)"/>
+<path d="M695,122 L695,190" fill="none" stroke="#0b5fff" stroke-width="1.2" marker-end="url(#pb-arre)"/>
+<path d="M695,220 L695,270" fill="none" stroke="#0b5fff" stroke-width="1.2" marker-end="url(#pb-arre)"/>
+<path d="M743,122 L743,190" fill="none" stroke="#0b5fff" stroke-width="1.2" marker-end="url(#pb-arre)"/>
+<path d="M743,220 L743,270" fill="none" stroke="#0b5fff" stroke-width="1.2" marker-end="url(#pb-arre)"/>
+<path d="M791,122 L791,190" fill="none" stroke="#0b5fff" stroke-width="1.2" marker-end="url(#pb-arre)"/>
+<path d="M791,220 L791,270" fill="none" stroke="#0b5fff" stroke-width="1.2" marker-end="url(#pb-arre)"/>
+<path d="M839,122 L839,190" fill="none" stroke="#0b5fff" stroke-width="1.2" marker-end="url(#pb-arre)"/>
+<path d="M839,220 L839,270" fill="none" stroke="#0b5fff" stroke-width="1.2" marker-end="url(#pb-arre)"/>
+<path d="M887,122 L887,190" fill="none" stroke="#0b5fff" stroke-width="1.2" marker-end="url(#pb-arre)"/>
+<path d="M887,220 L887,270" fill="none" stroke="#0b5fff" stroke-width="1.2" marker-end="url(#pb-arre)"/>
+<text x="916" y="146" font-size="10" text-anchor="end" opacity="0.8">AXI4-Stream · 128 b</text>
+<text x="916" y="250" font-size="10" text-anchor="end" opacity="0.8">AXI4-Stream · 128 b</text>
+<text x="532" y="402" font-size="10" text-anchor="start" opacity="0.7">irq: fetch → pl_ps_irq0[0], mac → [1] (the driver polls ap_done)</text>
+<path d="M320,80 L520,80" fill="none" stroke="#0b5fff" stroke-width="1.3" marker-start="url(#pb-arre-s)" marker-end="url(#pb-arre)"/>
+<path d="M320,92 L520,92" fill="none" stroke="#0b5fff" stroke-width="1.3" marker-start="url(#pb-arre-s)" marker-end="url(#pb-arre)"/>
+<path d="M320,104 L520,104" fill="none" stroke="#0b5fff" stroke-width="1.3" marker-start="url(#pb-arre-s)" marker-end="url(#pb-arre)"/>
+<path d="M320,116 L520,116" fill="none" stroke="#0b5fff" stroke-width="1.3" marker-start="url(#pb-arre-s)" marker-end="url(#pb-arre)"/>
+<text x="420" y="70" font-size="10.5" text-anchor="middle" fill="#0b5fff" font-weight="600">HP0–3 · 4 × 128 b</text>
+<text x="420" y="132" font-size="10" text-anchor="middle" opacity="0.8">weight reads, ~13 GB/s</text>
+<rect x="370" y="166" width="100" height="40" rx="6" fill="none" stroke="currentColor" stroke-width="1.2"/>
+<text x="420" y="182" font-size="10.5" text-anchor="middle" font-weight="600">SmartConnect</text>
+<text x="420" y="197" font-size="10.5" text-anchor="middle">9 : 1</text>
+<path d="M320,186 L370,186" fill="none" stroke="#0b5fff" stroke-width="1.3" marker-start="url(#pb-arre-s)" marker-end="url(#pb-arre)"/>
+<path d="M470,186 L488,186 L488,330 L520,330" fill="none" stroke="#0b5fff" stroke-width="1.3" marker-start="url(#pb-arre-s)" marker-end="url(#pb-arre)"/>
+<text x="420" y="158" font-size="10.5" text-anchor="middle" fill="#0b5fff" font-weight="600">HPC0 · 128 b</text>
+<text x="420" y="220" font-size="10" text-anchor="middle" opacity="0.8">x in · y out</text>
+<rect x="370" y="250" width="100" height="40" rx="6" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="5 3"/>
+<text x="420" y="266" font-size="10.5" text-anchor="middle" font-weight="600">SmartConnect</text>
+<text x="420" y="281" font-size="10.5" text-anchor="middle">AXI-Lite</text>
+<path d="M320,270 L370,270" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="5 3" marker-end="url(#pb-arr)"/>
+<path d="M470,270 L486,270 L486,452 L932,452 L932,91 L920,91" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="5 3" marker-end="url(#pb-arr)"/>
+<path d="M932,320 L920,320" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="5 3" marker-end="url(#pb-arr)"/>
+<text x="420" y="242" font-size="10.5" text-anchor="middle" font-weight="600">HPM0 · AXI-Lite 32 b</text>
+<text x="709" y="444" font-size="10" text-anchor="middle">control: W, x, y physical addresses · k · rows · ap_start</text>
+<text x="709" y="468" font-size="10" text-anchor="middle" opacity="0.75">s_axi_control at 0xA000_0000 (fetch) and 0xA001_0000 (mac)</text>
+<text x="709" y="484" font-size="10" text-anchor="middle" opacity="0.75">the overlay must carry the xlnx,afi-fpga node</text>
+<text x="20" y="536" font-size="10.5" text-anchor="start" opacity="0.8">solid: AXI4 data (blue: weights and activations · amber: the exchange) · dashed: AXI-Lite control</text>
+<text x="20" y="552" font-size="10.5" text-anchor="start" opacity="0.8">double-headed: read and write · 128 b = 16 B per beat</text></svg>
+        </div>
+        <figcaption>One board. Weights stream from DDR4 over the four HP ports into <code>gemv_fetch</code>, wait in eight UltraRAM FIFOs and drain through eight MAC units; activations in (<code>gmemx</code>) and results out (<code>gmemy0a…y3b</code>) share HPC0; the A53 drives both kernels over AXI-Lite and reaches the other three boards over gigabit Ethernet.</figcaption>
+        <ul>
+          <li>One engine call: the A53 quantizes x to Q8_0 (NEON), cleans it to DRAM, invalidates y, writes the MAC kernel's registers over AXI-Lite and polls <code>ap_done</code>; then it names the next matrix, and <code>gemv_fetch</code> starts streaming it into the FIFOs while the A53 does attention or the exchange. 65 calls a token.</li>
+          <li>The FIFOs hold the first 2 MB of a matrix, so q|k|v, o and down are on chip before their activations arrive; gate|up and lm_head are larger and stream the rest at DRAM speed.</li>
+          <li>The four quarters of a matrix sit at distinct offsets modulo 64 KB. At the same offset the four streams collide in the DRAM banks: 10.3 instead of 12.7 GB/s.</li>
+          <li>The overlay's <code>xlnx,afi-fpga</code> node sets the PS AXI master to 32 bits; without it most register writes are lost and the engine "finishes" in 2 µs.</li>
+        </ul>
+      </figure>
+    </div>
   </details>
 
   <div class="row" style="justify-content:flex-end;margin:6px 0 10px">
@@ -112,8 +338,8 @@ const base = (new URLSearchParams(location.search).get('api') || window.KV260_AP
 // One card for the system as a whole (the last chat, averaged over its
 // generation, and the four boards' totals), then one card per board with
 // its resources. Refreshed every second from /stats.
-// Per-board use of the implemented design and the XCK26's totals (Vivado, docs/buildlog/0006-fabric-engine.md).
-const PL = { lut: 32228, dsp: 228, bram: 48, lut_total: 117120, dsp_total: 1248, bram_total: 144 };
+// Per-board use of the gemv2 design the boards run and the XCK26's totals (Vivado, docs/buildlog/evidence/0012-gemv2-vivado-utilization.txt).
+const PL = { lut: 58268, dsp: 456, bram: 76, uram: 64, lut_total: 117120, dsp_total: 1248, bram_total: 144, uram_total: 64 };
 const plRow = (key) => `<div class="legend">${key.toUpperCase()} ${PL[key].toLocaleString('en-US')} / ${PL[key + '_total'].toLocaleString('en-US')}</div>${bar([['e', PL[key]]], PL[key + '_total'], true)}`;
 function bar(parts, total, pct) {   // parts: [[class, value], ...]; pct: show the fill percentage right of the bar
   const fill = parts.map(([c, v]) => `<i class="${c}" style="width:${total > 0 ? (100 * v / total).toFixed(1) : 0}%"></i>`).join('');
@@ -140,6 +366,7 @@ async function boards() {
     // the DRAM was busy in, and dividing by it read ~18.5 GB/s a board -- above what the
     // DRAM can deliver at all (12.7 GB/s measured, docs/buildlog/0012).
     const bwAll = tok > 0 ? weights / tok : 0;   // MB/ms = GB/s, averaged over the token
+    pipeline(j, c, tok);
     $('system').innerHTML = `
         <h3><span>System · ${nb} boards · ${j.model || ''}</span><span class="st ${on ? 'on' : ''}">${on ? '● decoding' : '○ idle'}</span></h3>
         ${c.n_gen > 0 ? `
@@ -153,7 +380,7 @@ async function boards() {
           <span>Hottest: <b>${temp > 0 ? temp.toFixed(1) + ' °C' : '—'}</b></span>
           <span>RAM: <b>${(memUsed / 1024).toFixed(1)} / ${(memTotal / 1024).toFixed(1)} GB</b></span>
           <span>Served: <b>${(j.tokens_total || 0).toLocaleString('en-US')} tokens</b> since start</span>
-          <span>Programmable Logic: <b>${(nb * PL.lut).toLocaleString('en-US')} LUT · ${nb * PL.dsp} DSP · ${nb * PL.bram} BRAM</b> in use across ${nb} boards</span>
+          <span>Programmable Logic: <b>${(nb * PL.lut).toLocaleString('en-US')} LUT · ${nb * PL.dsp} DSP · ${nb * PL.bram} BRAM · ${nb * PL.uram} URAM</b> in use across ${nb} boards</span>
         </div>`;
     const stale = j.sample_age_s < 0;
     g.innerHTML = j.boards.map(b => {
@@ -165,7 +392,7 @@ async function boards() {
         <h3><span>${b.host || 'board ' + (b.rank + 1)}</span><span class="st ${on ? 'on' : ''}">${on ? '● decoding ' + b.tps.toFixed(1) + ' t/s' : '○ idle'}</span></h3>
         <div class="legend" title="Shard bytes per token over the whole per-token time — the average DRAM rate, not the peak while streaming.">Memory BW (token avg) ${bw > 0 && !stale ? bw.toFixed(1) + ' / 19.2 GB/s' : '—'}</div>${bar([['e', bw]], 19.2, true)}
         <div class="legend">RAM ${(b.mem_used_mb / 1024).toFixed(2)} / ${(b.mem_total_mb / 1024).toFixed(1)} GB</div>${bar([['u', b.mem_used_mb]], b.mem_total_mb, true)}
-        ${plRow('lut')}${plRow('dsp')}${plRow('bram')}
+        ${plRow('lut')}${plRow('dsp')}${plRow('bram')}${plRow('uram')}
         <div class="kv">
           <span>Loaded Weights:</span><b>${b.shard_mb.toFixed(0)} MB (heads ${b.heads}, vocab rows ${b.vocab_rows})</b>
           <span>Fabric clock:</span><b>250 MHz</b>
@@ -178,9 +405,24 @@ async function boards() {
     g.innerHTML = '';
   }
 }
+// The Pipeline card's live numbers: the last chat's per-token averages and
+// rank 0's shard, written into the SVG's text spans by id.
+function pipeline(j, c, tok) {
+  const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+  const has = c.n_gen > 0;
+  set('pl-eng', has ? c.engine_ms.toFixed(1) : '—');
+  set('pl-cpu', has ? c.cpu_ms.toFixed(1) : '—');
+  set('pl-exch', has ? c.exchange_ms.toFixed(1) : '—');
+  set('pl-tok', has ? tok.toFixed(1) : '—');
+  set('pl-tps', has ? c.tps.toFixed(1) : '—');
+  set('pl-first', has ? (c.prompt_ms / 1000).toFixed(2) : '—');
+  set('pl-nprompt', has ? c.n_prompt : '—');
+  set('pl-shard', j.boards[0] ? j.boards[0].shard_mb.toFixed(0) : '—');
+}
 let tick = 0;
-boards(); setInterval(() => { if ($('resources').open || ++tick % 5 === 0) boards(); }, 1000);
-$('resources').addEventListener('toggle', () => { if ($('resources').open) boards(); });
+const folded = () => $('resources').open || $('pipeline').open;
+boards(); setInterval(() => { if (folded() || ++tick % 5 === 0) boards(); }, 1000);
+for (const id of ['resources', 'pipeline']) $(id).addEventListener('toggle', () => { if ($(id).open) boards(); });
 
 // Every reply runs as long as the context allows: the server clamps
 // max_tokens to ctx_max - prompt - 1 (tp_llama.cpp), so asking for the whole
